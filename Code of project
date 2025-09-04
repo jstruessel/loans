@@ -1,0 +1,133 @@
+from sklearn.pipeline import make_pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+from sklearn.preprocessing import StandardScaler
+
+!pip install transformers
+!pip install sentence-transformers
+
+from sentence_transformers import SentenceTransformer
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+data = pd.read_csv('https://raw.githubusercontent.com/jstruessel/loans/refs/heads/main/loan_data.csv')
+
+approval_count = data['Approval'].value_counts()
+print(approval_count)
+
+data.head()
+
+data['Approval'] = data['Approval'].replace('Rejected', 0)
+data['Approval'] = data['Approval'].replace('Approved', 1)
+
+data.Text
+
+Text = np.array(data.Text)
+
+Text[1101]
+
+sentences = np.array(data.Text)
+
+print(sentences)
+
+embeddings = model.encode(sentences)
+print(embeddings.shape)
+
+embeddings[1101]
+
+data2 = pd.DataFrame(embeddings)
+
+data2.head()
+
+data2.columns = data2.columns.astype(str)
+
+data2.shape
+
+data2['Income'] = data['Income']
+data2['Credit_Score'] = data['Credit_Score']
+data2['Loan_Amount'] = data['Loan_Amount']
+data2['DTI_Ratio'] = data['DTI_Ratio']
+data2['Employment_Status'] = data['Employment_Status']
+data2['Approval'] = data['Approval']
+
+from sklearn.preprocessing import StandardScaler
+
+X = data2.drop(columns=["Approval"])
+y = data2['Approval']
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+# Make the pipeline
+the_pipeline = make_pipeline(
+    ColumnTransformer([('ohe',
+                        OneHotEncoder(drop='first',
+                                      handle_unknown="ignore"),
+                        ['Employment_Status']),],
+                      remainder='passthrough'),
+)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(the_pipeline.fit_transform(X_train))
+y = y_train.to_numpy()
+# convert to tensors
+
+
+X = torch.from_numpy(X_scaled).float()
+y = torch.from_numpy(y).float()
+
+# convert to dataloader
+from torch.utils.data import TensorDataset, DataLoader
+training_data = TensorDataset(X, y)
+data_loader = DataLoader(training_data, batch_size=33, shuffle=True)
+
+X.shape
+
+class NeuralNetwork(nn.Module):
+    def __init__(self):
+        # inherit from nn.Module
+        super().__init__()
+        # The model architecture
+        self.linear_stack = nn.Sequential(
+            nn.Linear(389, 10),
+            nn.ReLU(),
+            nn.Linear(10, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        output = self.linear_stack(x)
+        return output
+
+model = NeuralNetwork()
+from torch import optim
+optimizer = optim.SGD(model.parameters(), lr=0.01)
+criterion = nn.MSELoss()
+
+epochs = 100
+loss_record = []
+for epoch in range(epochs):
+    epoch_loss_record = []
+    for x_batch,y_batch in data_loader:
+        # THE FORWARD PASS
+        # Make predictions
+        y_pred = model(x_batch)
+        # THE BACKWARD PASS
+        # Compute loss
+        loss = criterion(y_pred, y_batch)
+        loss.backward()
+        optimizer.step()
+        # Reset saved gradients to zero
+        optimizer.zero_grad()
+        # Recording loss metric and any
+        # other data we want to here
+        epoch_loss_record.append(loss.item())
+    loss_record.append(np.mean(epoch_loss_record))
+    if (epoch + 1) % 4 == 0:
+        print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss_record[-1]:.4f}')
+
+plt.plot(list(range(len(loss_record))),loss_record)
